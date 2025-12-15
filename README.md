@@ -270,6 +270,12 @@ or **values.yaml** in the case of helm chart installation
 
 Access the dashboard at `http://<server-ip>:<port>/<dashboard-path>`
 
+The dashboard shows:
+- Total and unique accesses
+- Suspicious activity detection
+- Top IPs, paths, and user-agents
+- Real-time monitoring
+
 The attackers' triggered honeypot path and the suspicious activity (such as failed login attempts) are logged
 
 ![dashboard-1](img/dashboard-1.png)
@@ -278,31 +284,12 @@ The top IP Addresses is shown along with top paths and User Agents
 
 ![dashboard-2](img/dashboard-2.png)
 
-The dashboard shows:
-- Total and unique accesses
-- Suspicious activity detection
-- Honeypot triggers
-- Top IPs, paths, and user-agents
-- Real-time monitoring
-
 ### Retrieving Dashboard Path
 
-Check server startup logs
+Check server startup logs or get the secret with 
 
-**Python/Docker:**
-```bash
-docker logs krawl | grep "Dashboard available"
-```
-
-**Kubernetes:**
 ```bash
 kubectl get secret krawl-server -n krawl-system \
-  -o jsonpath='{.data.dashboard-path}' | base64 -d && echo
-```
-
-**Helm:**
-```bash
-kubectl get secret krawl -n krawl-system \
   -o jsonpath='{.data.dashboard-path}' | base64 -d && echo
 ```
 
