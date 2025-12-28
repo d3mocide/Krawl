@@ -1,15 +1,29 @@
 #!/usr/bin/env python3
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 from collections import defaultdict
 from datetime import datetime
 import re
 import urllib.parse
 
+from database import get_database, DatabaseManager
+
 
 class AccessTracker:
-    """Track IP addresses and paths accessed"""
-    def __init__(self):
+    """
+    Track IP addresses and paths accessed.
+
+    Maintains in-memory structures for fast dashboard access and
+    persists data to SQLite for long-term storage and analysis.
+    """
+    def __init__(self, db_manager: Optional[DatabaseManager] = None):
+        """
+        Initialize the access tracker.
+
+        Args:
+            db_manager: Optional DatabaseManager for persistence.
+                        If None, will use the global singleton.
+        """
         self.ip_counts: Dict[str, int] = defaultdict(int)
         self.path_counts: Dict[str, int] = defaultdict(int)
         self.user_agent_counts: Dict[str, int] = defaultdict(int)
@@ -21,7 +35,7 @@ class AccessTracker:
             'burp', 'zap', 'w3af', 'metasploit', 'nuclei', 'gobuster', 'dirbuster'
         ]
 
-        # common attack types such as xss, shell injection, probes
+        # Common attack types such as xss, shell injection, probes
         self.attack_types = {
             'path_traversal': r'\.\.',
             'sql_injection': r"('|--|;|\bOR\b|\bUNION\b|\bSELECT\b|\bDROP\b)",
@@ -32,6 +46,25 @@ class AccessTracker:
 
         # Track IPs that accessed honeypot paths from robots.txt
         self.honeypot_triggered: Dict[str, List[str]] = defaultdict(list)
+
+        # Database manager for persistence (lazily initialized)
+        self._db_manager = db_manager
+
+    @property
+    def db(self) -> Optional[DatabaseManager]:
+        """
+        Get the database manager, lazily initializing if needed.
+
+        Returns:
+            DatabaseManager instance or None if not available
+        """
+        if self._db_manager is None:
+            try:
+                self._db_manager = get_database()
+            except Exception:
+                # Database not initialized, persistence disabled
+                pass
+        return self._db_manager
 
     def parse_credentials(self, post_data: str) -> Tuple[str, str]:
         """
@@ -75,7 +108,12 @@ class AccessTracker:
         return username, password
 
     def record_credential_attempt(self, ip: str, path: str, username: str, password: str):
-        """Record a credential login attempt"""
+        """
+        Record a credential login attempt.
+
+        Stores in both in-memory list and SQLite database.
+        """
+        # In-memory storage for dashboard
         self.credential_attempts.append({
             'ip': ip,
             'path': path,
@@ -84,36 +122,88 @@ class AccessTracker:
             'timestamp': datetime.now().isoformat()
         })
 
-    def record_access(self, ip: str, path: str, user_agent: str = '', body: str = ''):
-        """Record an access attempt"""
+        # Persist to database
+        if self.db:
+            try:
+                self.db.persist_credential(
+                    ip=ip,
+                    path=path,
+                    username=username,
+                    password=password
+                )
+            except Exception:
+                # Don't crash if database persistence fails
+                pass
+
+    def record_access(
+        self,
+        ip: str,
+        path: str,
+        user_agent: str = '',
+        body: str = '',
+        method: str = 'GET'
+    ):
+        """
+        Record an access attempt.
+
+        Stores in both in-memory structures and SQLite database.
+
+        Args:
+            ip: Client IP address
+            path: Requested path
+            user_agent: Client user agent string
+            body: Request body (for POST/PUT)
+            method: HTTP method
+        """
         self.ip_counts[ip] += 1
         self.path_counts[path] += 1
         if user_agent:
             self.user_agent_counts[user_agent] += 1
-        
-        # path attack type detection
+
+        # Path attack type detection
         attack_findings = self.detect_attack_type(path)
 
-        # post / put data
+        # POST/PUT body attack detection
         if len(body) > 0:
             attack_findings.extend(self.detect_attack_type(body))
 
-        is_suspicious = self.is_suspicious_user_agent(user_agent) or self.is_honeypot_path(path) or len(attack_findings) > 0
+        is_suspicious = (
+            self.is_suspicious_user_agent(user_agent) or
+            self.is_honeypot_path(path) or
+            len(attack_findings) > 0
+        )
+        is_honeypot = self.is_honeypot_path(path)
 
-        
         # Track if this IP accessed a honeypot path
-        if self.is_honeypot_path(path):
+        if is_honeypot:
             self.honeypot_triggered[ip].append(path)
-        
+
+        # In-memory storage for dashboard
         self.access_log.append({
             'ip': ip,
             'path': path,
             'user_agent': user_agent,
             'suspicious': is_suspicious,
-            'honeypot_triggered': self.is_honeypot_path(path),
-            'attack_types':attack_findings,
+            'honeypot_triggered': is_honeypot,
+            'attack_types': attack_findings,
             'timestamp': datetime.now().isoformat()
         })
+
+        # Persist to database
+        if self.db:
+            try:
+                self.db.persist_access(
+                    ip=ip,
+                    path=path,
+                    user_agent=user_agent,
+                    method=method,
+                    is_suspicious=is_suspicious,
+                    is_honeypot_trigger=is_honeypot,
+                    attack_types=attack_findings if attack_findings else None
+                )
+            except Exception:
+                # Don't crash if database persistence fails
+                pass
 
     def detect_attack_type(self, data:str) -> list[str]:
         """
