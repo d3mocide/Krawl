@@ -21,7 +21,7 @@ class Config:
     api_server_port: int = 8080
     api_server_path: str = "/api/v2/users"
     probability_error_codes: int = 0  # Percentage (0-100)
-    server_header: str = "Apache/2.2.22 (Ubuntu)"
+    server_header: Optional[str] = None
 
     @classmethod
     def from_env(cls) -> 'Config':
