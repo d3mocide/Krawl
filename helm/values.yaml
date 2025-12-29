@@ -73,6 +73,7 @@ config:
   maxCounter: 10
   canaryTokenTries: 10
   probabilityErrorCodes: 0
+# timezone: "UTC"
 #  serverHeader: "Apache/2.2.22 (Ubuntu)"
 #  dashboardSecretPath: "/my-secret-dashboard"
 #  canaryTokenUrl: set-your-canary-token-url-here
