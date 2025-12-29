@@ -185,7 +185,7 @@ To customize the deception server installation several **environment variables**
 | `CANARY_TOKEN_URL` | External canary token URL | None |
 | `DASHBOARD_SECRET_PATH` | Custom dashboard path | Auto-generated |
 | `PROBABILITY_ERROR_CODES` | Error response probability (0-100%) | `0` |
-| `SERVER_HEADER` | HTTP Server header for deception | `Apache/2.2.22 (Ubuntu)` |
+| `SERVER_HEADER` | HTTP Server header for deception, if not set use random server header | |
 
 ## robots.txt
 The actual (juicy) robots.txt configuration is the following
