@@ -4,6 +4,7 @@ LABEL org.opencontainers.image.source=https://github.com/BlessedRebuS/Krawl
 
 WORKDIR /app
 
+# Install Python dependencies
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
