@@ -74,7 +74,29 @@ config:
   canaryTokenTries: 10
   probabilityErrorCodes: 0
   serverHeader: "Apache/2.2.22 (Ubuntu)"
+# timezone: "UTC"
+#  serverHeader: "Apache/2.2.22 (Ubuntu)"
+#  dashboardSecretPath: "/my-secret-dashboard"
 #  canaryTokenUrl: set-your-canary-token-url-here
+#  timezone: "UTC"  # IANA timezone (e.g., "America/New_York", "Europe/Rome"). If not set, system timezone is used.
+
+# Database configuration
+database:
+  # Path to the SQLite database file
+  path: "data/krawl.db"
+  # Number of days to retain access logs and attack data
+  retentionDays: 30
+  # Persistence configuration
+  persistence:
+    enabled: true
+    # Storage class name (use default if not specified)
+    # storageClassName: ""
+    # Access mode for the persistent volume
+    accessMode: ReadWriteOnce
+    # Size of the persistent volume
+    size: 1Gi
+    # Optional: Use existing PVC
+    # existingClaim: ""
 
 networkPolicy:
   enabled: true
@@ -268,6 +290,17 @@ wordlists:
       - .git/
       - keys/
       - credentials/
+  server_headers:
+    - Apache/2.2.22 (Ubuntu)
+    - nginx/1.18.0
+    - Microsoft-IIS/10.0
+    - LiteSpeed
+    - Caddy
+    - Gunicorn/20.0.4
+    - uvicorn/0.13.4
+    - Express
+    - Flask/1.1.2
+    - Django/3.1
   error_codes:
     - 400
     - 401

@@ -57,7 +57,8 @@ class Wordlists:
             },
             "users": {
                 "roles": ["Administrator", "User"]
-            }
+            },
+            "server_headers": ["Apache/2.4.41 (Ubuntu)", "nginx/1.18.0"]
         }
     
     @property
@@ -123,6 +124,9 @@ class Wordlists:
     @property
     def server_errors(self):
         return self._data.get("server_errors", {})
+    
+    def server_headers(self):
+        return self._data.get("server_headers", [])
 
 
 _wordlists_instance = None

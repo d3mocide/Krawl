@@ -14,7 +14,7 @@ from templates import html_templates
 from templates.dashboard_template import generate_dashboard
 from generators import (
     credentials_txt, passwords_txt, users_json, api_keys_json,
-    api_response, directory_listing
+    api_response, directory_listing, random_server_header
 )
 from wordlists import get_wordlists
 from sql_errors import generate_sql_error_response, get_sql_response_with_data
@@ -56,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def version_string(self) -> str:
         """Return custom server version for deception."""
-        return self.config.server_header
+        return random_server_header()
 
     def _should_return_error(self) -> bool:
         """Check if we should return an error based on probability"""
@@ -342,17 +342,21 @@ class Handler(BaseHTTPRequestHandler):
 
             self.access_logger.warning(f"[POST DATA] {post_data[:200]}")
 
+            # Parse and log credentials
             username, password = self.tracker.parse_credentials(post_data)
             if username or password:
+                # Log to dedicated credentials.log file
                 timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")
                 credential_line = f"{timestamp}|{client_ip}|{username or 'N/A'}|{password or 'N/A'}|{self.path}"
                 self.credential_logger.info(credential_line)
                 
+                # Also record in tracker for dashboard
                 self.tracker.record_credential_attempt(client_ip, self.path, username or 'N/A', password or 'N/A')
                 
                 self.access_logger.warning(f"[CREDENTIALS CAPTURED] {client_ip} - Username: {username or 'N/A'} - Path: {self.path}")
 
-        self.tracker.record_access(client_ip, self.path, user_agent, post_data)
+        # send the post data (body) to the record_access function so the post data can be used to detect suspicious things.
+        self.tracker.record_access(client_ip, self.path, user_agent, post_data, method='POST')
         
         time.sleep(1)
         
@@ -495,7 +499,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.app_logger.error(f"Error generating dashboard: {e}")
             return
 
-        self.tracker.record_access(client_ip, self.path, user_agent)
+        self.tracker.record_access(client_ip, self.path, user_agent, method='GET')
 
         if self.tracker.is_suspicious_user_agent(user_agent):
             self.access_logger.warning(f"[SUSPICIOUS] {client_ip} - {user_agent[:50]} - {self.path}")
