@@ -7,7 +7,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import re
 from wordlists import get_wordlists
-
+from config import get_config
 """
 Functions for user activity analysis
 """
@@ -46,6 +46,17 @@ class Analyzer:
         return self._db_manager
     
     def infer_user_category(self, ip: str) -> str:
+
+        config = get_config()
+        
+        http_risky_methods_threshold = config.http_risky_methods_threshold
+        violated_robots_threshold = config.violated_robots_threshold
+        uneven_request_timing_threshold = config.uneven_request_timing_threshold
+        user_agents_used_threshold = config.user_agents_used_threshold
+        attack_urls_threshold = config.attack_urls_threshold
+        uneven_request_timing_time_window_seconds = config.uneven_request_timing_time_window_seconds
+
+        print(f"http_risky_methods_threshold: {http_risky_methods_threshold}")
 
         score = {}
         score["attacker"] = {"risky_http_methods": False, "robots_violations": False, "uneven_request_timing": False, "different_user_agents": False, "attack_url": False}
@@ -104,14 +115,13 @@ class Analyzer:
         #print(f"TOTAL: {total_accesses_count} - GET: {get_accesses_count} - POST: {post_accesses_count}")
         
 
-        #if >5% attacker or bad crawler
-        if total_accesses_count > 0:
+        if total_accesses_count > http_risky_methods_threshold:
             http_method_attacker_score = (post_accesses_count + put_accesses_count + delete_accesses_count + options_accesses_count + patch_accesses_count) / total_accesses_count
         else:
             http_method_attacker_score = 0
 
         #print(f"HTTP Method attacker score: {http_method_attacker_score}")
-        if http_method_attacker_score > 0.2:
+        if http_method_attacker_score >= http_risky_methods_threshold:
             score["attacker"]["risky_http_methods"] = True
             score["good_crawler"]["risky_http_methods"] = False
             score["bad_crawler"]["risky_http_methods"] = True
@@ -150,32 +160,27 @@ class Analyzer:
         else:
             violated_robots_ratio = 0
 
-        if violated_robots_ratio > 0.10:
+        if violated_robots_ratio >= violated_robots_threshold:
             score["attacker"]["robots_violations"] = True
             score["good_crawler"]["robots_violations"] = False
             score["bad_crawler"]["robots_violations"] = True
             score["regular_user"]["robots_violations"] = False
         else:
-            score["attacker"]["robots_violations"] = True
+            score["attacker"]["robots_violations"] = False
             score["good_crawler"]["robots_violations"] = False
-            score["bad_crawler"]["robots_violations"] = True
+            score["bad_crawler"]["robots_violations"] = False
             score["regular_user"]["robots_violations"] = False
         
         #--------------------- Requests Timing ---------------------
         #Request rate and timing: steady, throttled, polite vs attackers' bursty, aggressive, or oddly rhythmic behavior
         timestamps = [datetime.fromisoformat(item["timestamp"]) for item in accesses]
-        print(f"Timestamps #: {len(timestamps)}")
-        timestamps = [ts for ts in timestamps if datetime.utcnow() - ts <= timedelta(minutes=5)]
-        print(f"Timestamps #: {len(timestamps)}")
+        timestamps = [ts for ts in timestamps if datetime.utcnow() - ts <= timedelta(seconds=uneven_request_timing_time_window_seconds)]
         timestamps = sorted(timestamps, reverse=True)
-        print(f"Timestamps #: {len(timestamps)}")
 
         time_diffs = []
         for i in range(0, len(timestamps)-1):
             diff = (timestamps[i] - timestamps[i+1]).total_seconds()
             time_diffs.append(diff)
-        
-        print(f"Time diffs: {time_diffs}")
         
         mean = 0
         variance = 0
@@ -186,17 +191,17 @@ class Analyzer:
             variance = sum((x - mean) ** 2 for x in time_diffs) / len(time_diffs)
             std = variance ** 0.5
             cv = std/mean
-            print(f"Mean: {mean} - Variance {variance} - Standard Deviation {std} - Coefficient of Variation: {cv}")
+            #print(f"Mean: {mean} - Variance {variance} - Standard Deviation {std} - Coefficient of Variation: {cv}")
 
-        if mean > 4:
+        if mean >= uneven_request_timing_threshold:
             score["attacker"]["uneven_request_timing"] = True
             score["good_crawler"]["uneven_request_timing"] = False
             score["bad_crawler"]["uneven_request_timing"] = False
             score["regular_user"]["uneven_request_timing"] = True
         else:
-            score["attacker"]["uneven_request_timing"] = True
+            score["attacker"]["uneven_request_timing"] = False
             score["good_crawler"]["uneven_request_timing"] = False
-            score["bad_crawler"]["uneven_request_timing"] = True
+            score["bad_crawler"]["uneven_request_timing"] = False
             score["regular_user"]["uneven_request_timing"] = False
 
 
@@ -206,39 +211,31 @@ class Analyzer:
         user_agents_used = list(dict.fromkeys(user_agents_used))
         #print(f"User agents used: {user_agents_used}")
 
-        if len(user_agents_used)> 4:
+        if len(user_agents_used) >= user_agents_used_threshold:
             score["attacker"]["different_user_agents"] = True
             score["good_crawler"]["different_user_agents"] = False
             score["bad_crawler"]["different_user_agentss"] = True
             score["regular_user"]["different_user_agents"] = False
         else:
-            score["attacker"]["different_user_agents"] = True
+            score["attacker"]["different_user_agents"] = False
             score["good_crawler"]["different_user_agents"] = False
-            score["bad_crawler"]["different_user_agents"] = True
+            score["bad_crawler"]["different_user_agents"] = False
             score["regular_user"]["different_user_agents"] = False
 
         #--------------------- Attack URLs ---------------------
 
-        attack_url_found = False
-        # attack_types = {
-        #     'path_traversal': r'\.\.',
-        #     'sql_injection': r"('|--|;|\bOR\b|\bUNION\b|\bSELECT\b|\bDROP\b)",
-        #     'xss_attempt': r'(<script|javascript:|onerror=|onload=)',
-        #     'shell_injection': r'(\||;|`|\$\(|&&)'
-        # }
+        attack_urls_found_list = []
 
         wl = get_wordlists()
         if wl.attack_urls:
             queried_paths = [item["path"] for item in accesses]
 
             for queried_path in queried_paths:
-                #print(f"QUERIED PATH: {queried_path}")
                 for name, pattern in wl.attack_urls.items():
-                    #print(f"Pattern: {pattern}")
                     if re.search(pattern, queried_path, re.IGNORECASE):
-                        attack_url_found = True
+                        attack_url_found_list.append(pattern)
             
-            if attack_url_found:
+            if len(attack_urls_found_list) > attack_urls_threshold:
                 score["attacker"]["attack_url"] = True
                 score["good_crawler"]["attack_url"] = False
                 score["bad_crawler"]["attack_url"] = False
@@ -275,12 +272,12 @@ class Analyzer:
         regular_user_score = regular_user_score + score["regular_user"]["different_user_agents"] * weights["regular_user"]["different_user_agents"]
         regular_user_score = regular_user_score + score["regular_user"]["attack_url"] * weights["regular_user"]["attack_url"]
 
-        #print(f"Attacker score: {attacker_score}")
-        #print(f"Good Crawler score: {good_crawler_score}")
-        #print(f"Bad Crawler score: {bad_crawler_score}")
-        #print(f"Regular User score: {regular_user_score}")
+        print(f"Attacker score: {attacker_score}")
+        print(f"Good Crawler score: {good_crawler_score}")
+        print(f"Bad Crawler score: {bad_crawler_score}")
+        print(f"Regular User score: {regular_user_score}")
 
-        analyzed_metrics = {"risky_http_methods": http_method_attacker_score, "robots_violations": violated_robots_ratio, "uneven_request_timing": mean, "different_user_agents": user_agents_used, "attack_url": attack_url_found}
+        analyzed_metrics = {"risky_http_methods": http_method_attacker_score, "robots_violations": violated_robots_ratio, "uneven_request_timing": mean, "different_user_agents": user_agents_used, "attack_url": attack_urls_found_list}
         category_scores = {"attacker": attacker_score, "good_crawler": good_crawler_score, "bad_crawler": bad_crawler_score, "regular_user": regular_user_score}
         category = max(category_scores, key=category_scores.get)
         last_analysis = datetime.utcnow()
