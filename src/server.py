@@ -13,6 +13,7 @@ from tracker import AccessTracker
 from handler import Handler
 from logger import initialize_logging, get_app_logger, get_access_logger, get_credential_logger
 from database import initialize_database
+from tasks_master import get_tasksmaster
 
 
 def print_usage():
@@ -88,6 +89,10 @@ def main():
                 Handler.webpages = None
         except IOError:
             app_logger.warning("Can't read input file. Using randomly generated links.")
+
+    # tasks master init
+    tasks_master = get_tasksmaster()
+    tasks_master.run_scheduled_tasks()
 
     try:
         app_logger.info(f'Starting deception server on port {config.port}...')
