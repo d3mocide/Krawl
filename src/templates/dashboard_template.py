@@ -156,11 +156,35 @@ def generate_dashboard(stats: dict) -> str:
             background: #1c1917;
             border-left: 4px solid #f85149;
         }}
+        th.sortable {{
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            padding-right: 24px;
+        }}
+        th.sortable:hover {{
+            background: #1c2128;
+        }}
+        th.sortable::after {{
+            content: '⇅';
+            position: absolute;
+            right: 8px;
+            opacity: 0.5;
+            font-size: 12px;
+        }}
+        th.sortable.asc::after {{
+            content: '▲';
+            opacity: 1;
+        }}
+        th.sortable.desc::after {{
+            content: '▼';
+            opacity: 1;
+        }}
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>&#128375;&#65039; Krawl Dashboard</h1>
+        <h1>Krawl Dashboard</h1>
         
         <div class="stats-grid">
             <div class="stat-card">
@@ -190,13 +214,13 @@ def generate_dashboard(stats: dict) -> str:
         </div>
 
         <div class="table-container alert-section">
-            <h2>🍯 Honeypot Triggers by IP</h2>
-            <table>
+            <h2>Honeypot Triggers by IP</h2>
+            <table id="honeypot-table">
                 <thead>
                     <tr>
-                        <th>IP Address</th>
+                        <th class="sortable" data-sort="ip">IP Address</th>
                         <th>Accessed Paths</th>
-                        <th>Count</th>
+                        <th class="sortable" data-sort="count">Count</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -206,7 +230,7 @@ def generate_dashboard(stats: dict) -> str:
         </div>
 
         <div class="table-container alert-section">
-            <h2>&#9888;&#65039; Recent Suspicious Activity</h2>
+            <h2>Recent Suspicious Activity</h2>
             <table>
                 <thead>
                     <tr>
@@ -223,7 +247,7 @@ def generate_dashboard(stats: dict) -> str:
         </div>
 
         <div class="table-container alert-section">
-            <h2>🔑 Captured Credentials</h2>
+            <h2>Captured Credentials</h2>
             <table>
                 <thead>
                     <tr>
@@ -241,7 +265,7 @@ def generate_dashboard(stats: dict) -> str:
         </div>
 
         <div class="table-container alert-section">
-            <h2>&#128520; Detected Attack Types</h2>
+            <h2>Detected Attack Types</h2>
             <table>
                 <thead>
                     <tr>
@@ -306,6 +330,64 @@ def generate_dashboard(stats: dict) -> str:
             </table>
         </div>
     </div>
+    <script>
+        // Add sorting functionality to tables
+        document.querySelectorAll('th.sortable').forEach(header => {{
+            header.addEventListener('click', function() {{
+                const table = this.closest('table');
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const sortType = this.getAttribute('data-sort');
+                const columnIndex = Array.from(this.parentElement.children).indexOf(this);
+                
+                // Determine sort direction
+                const isAscending = this.classList.contains('asc');
+                
+                // Remove sort classes from all headers in this table
+                table.querySelectorAll('th.sortable').forEach(th => {{
+                    th.classList.remove('asc', 'desc');
+                }});
+                
+                // Add appropriate class to clicked header
+                this.classList.add(isAscending ? 'desc' : 'asc');
+                
+                // Sort rows
+                rows.sort((a, b) => {{
+                    let aValue = a.cells[columnIndex].textContent.trim();
+                    let bValue = b.cells[columnIndex].textContent.trim();
+                    
+                    // Handle numeric sorting
+                    if (sortType === 'count') {{
+                        aValue = parseInt(aValue) || 0;
+                        bValue = parseInt(bValue) || 0;
+                        return isAscending ? bValue - aValue : aValue - bValue;
+                    }}
+                    
+                    // Handle IP address sorting
+                    if (sortType === 'ip') {{
+                        const ipToNum = ip => {{
+                            const parts = ip.split('.');
+                            if (parts.length !== 4) return 0;
+                            return parts.reduce((acc, part, i) => acc + (parseInt(part) || 0) * Math.pow(256, 3 - i), 0);
+                        }};
+                        const aNum = ipToNum(aValue);
+                        const bNum = ipToNum(bValue);
+                        return isAscending ? bNum - aNum : aNum - bNum;
+                    }}
+                    
+                    // Default string sorting
+                    if (isAscending) {{
+                        return bValue.localeCompare(aValue);
+                    }} else {{
+                        return aValue.localeCompare(bValue);
+                    }}
+                }});
+                
+                // Re-append sorted rows
+                rows.forEach(row => tbody.appendChild(row));
+            }});
+        }});
+    </script>
 </body>
 </html>
 """

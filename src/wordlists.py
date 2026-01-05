@@ -125,6 +125,7 @@ class Wordlists:
     def server_errors(self):
         return self._data.get("server_errors", {})
     
+    @property
     def server_headers(self):
         return self._data.get("server_headers", [])
     
