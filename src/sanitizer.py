@@ -7,7 +7,7 @@ Protects against SQL injection payloads, XSS, and storage exhaustion attacks.
 
 import html
 import re
-from typing import Optional
+from typing import Optional, Dict
 
 
 # Field length limits for database storage
@@ -111,3 +111,6 @@ def escape_html_truncated(value: Optional[str], max_display_length: int) -> str:
         value_str = value_str[:max_display_length] + "..."
 
     return html.escape(value_str)
+
+def sanitize_dict(value: Optional[Dict[str,str]], max_display_length):
+    return {k: sanitize_for_storage(v, max_display_length) for k, v in value.items()}

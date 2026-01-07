@@ -134,6 +134,7 @@ class IpStats(Base):
     city: Mapped[Optional[str]] = mapped_column(String(MAX_CITY_LENGTH), nullable=True)
     asn: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     asn_org: Mapped[Optional[str]] = mapped_column(String(MAX_ASN_ORG_LENGTH), nullable=True)
+    list_on: Mapped[Optional[Dict[str,str]]] = mapped_column(JSON, nullable=True)
 
     # Reputation fields (populated by future enrichment)
     reputation_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
@@ -150,33 +151,3 @@ class IpStats(Base):
 
     def __repr__(self) -> str:
         return f"<IpStats(ip='{self.ip}', total_requests={self.total_requests})>"
-
-# class IpLog(Base):
-#     """
-#     Records all IPs that have accessed the honeypot, along with aggregated stats and inferred user category.
-#     """
-#     __tablename__ = 'ip_logs'
-
-#     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-#     ip: Mapped[str] = mapped_column(String(MAX_IP_LENGTH), nullable=False, index=True)
-#     stats: Mapped[List[str]] = mapped_column(String(MAX_PATH_LENGTH))
-#     category: Mapped[str] = mapped_column(String(15))
-#     manual_category: Mapped[bool] = mapped_column(Boolean, default=False)
-#     last_analysis: Mapped[datetime] = mapped_column(DateTime, index=True),
-
-#     # Relationship to attack detections
-#     access_logs: Mapped[List["AccessLog"]] = relationship(
-#         "AccessLog",
-#         back_populates="ip",
-#         cascade="all, delete-orphan"
-#     )
-
-#     # Indexes for common queries
-#     __table_args__ = (
-#         Index('ix_access_logs_ip_timestamp', 'ip', 'timestamp'),
-#         Index('ix_access_logs_is_suspicious', 'is_suspicious'),
-#         Index('ix_access_logs_is_honeypot_trigger', 'is_honeypot_trigger'),
-#     )
-
-#     def __repr__(self) -> str:
-#         return f"<AccessLog(id={self.id}, ip='{self.ip}', path='{self.path[:50]}')>"

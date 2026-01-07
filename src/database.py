@@ -246,7 +246,7 @@ class DatabaseManager:
         ip_stats.category_scores = category_scores
         ip_stats.last_analysis = last_analysis
 
-    def  manual_update_category(self, ip: str, category: str) -> None:
+    def manual_update_category(self, ip: str, category: str) -> None:
         """
         Update IP category as a result of a manual intervention by an admin
 
@@ -257,10 +257,35 @@ class DatabaseManager:
         """
         session = self.session
 
+        sanitized_ip = sanitize_ip(ip)
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
+        
 
         ip_stats.category = category
         ip_stats.manual_category = True
+
+    def update_ip_rep_infos(self, ip: str, country_code: str, asn: str, asn_org: str, list_on: Dict[str,str]) -> None:
+        """
+        Update IP rep stats
+
+        Args:
+            ip: IP address
+            country_code: IP address country code
+            asn: IP address ASN
+            asn_org: IP address ASN ORG
+            list_on: public lists containing the IP address
+        
+        """
+        session = self.session
+        
+        sanitized_ip = sanitize_ip(ip)
+        ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
+
+        ip_stats.country_code = country_code
+        ip_stats.asn = asn
+        ip_stats.asn_org = asn_org
+        ip_stats.list_on = list_on
+
 
     def get_access_logs(
         self,
