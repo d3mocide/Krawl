@@ -7,6 +7,7 @@ Customize this template to change the dashboard appearance.
 
 import html
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 def _escape(value) -> str:
     """Escape HTML special characters to prevent XSS attacks."""
@@ -14,18 +15,36 @@ def _escape(value) -> str:
         return ""
     return html.escape(str(value))
 
-def format_timestamp(iso_timestamp: str) -> str:
-    """Format ISO timestamp for display (YYYY-MM-DD HH:MM:SS)"""
+def format_timestamp(iso_timestamp: str, timezone: str = 'UTC', time_only: bool = False) -> str:
+    """Format ISO timestamp for display with timezone conversion
+    
+    Args:
+        iso_timestamp: ISO format timestamp string (UTC)
+        timezone: IANA timezone string to convert to
+        time_only: If True, return only HH:MM:SS, otherwise full datetime
+    """
     try:
+        # Parse UTC timestamp
         dt = datetime.fromisoformat(iso_timestamp)
+        # Convert to target timezone
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(ZoneInfo(timezone))
+        
+        if time_only:
+            return dt.strftime("%H:%M:%S")
         return dt.strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         # Fallback for old format
         return iso_timestamp.split("T")[1][:8] if "T" in iso_timestamp else iso_timestamp
 
 
-def generate_dashboard(stats: dict) -> str:
-    """Generate dashboard HTML with access statistics"""
+def generate_dashboard(stats: dict, timezone: str = 'UTC') -> str:
+    """Generate dashboard HTML with access statistics
+    
+    Args:
+        stats: Statistics dictionary
+        timezone: IANA timezone string (e.g., 'Europe/Paris', 'America/New_York')
+    """
     
     # Generate IP rows with clickable functionality for dropdown stats
     top_ips_rows = '\n'.join([
@@ -62,7 +81,7 @@ def generate_dashboard(stats: dict) -> str:
             <td class="ip-clickable">{_escape(log["ip"])}</td>
             <td>{_escape(log["path"])}</td>
             <td style="word-break: break-all;">{_escape(log["user_agent"][:60])}</td>
-            <td>{_escape(log["timestamp"].split("T")[1][:8])}</td>
+            <td>{format_timestamp(log["timestamp"], timezone, time_only=True)}</td>
         </tr>
         <tr class="ip-stats-row" id="stats-row-suspicious-{_escape(log["ip"]).replace(".", "-")}" style="display: none;">
             <td colspan="4" class="ip-stats-cell">
@@ -98,7 +117,7 @@ def generate_dashboard(stats: dict) -> str:
             <td>{_escape(log["path"])}</td>
             <td>{_escape(", ".join(log["attack_types"]))}</td>
             <td style="word-break: break-all;">{_escape(log["user_agent"][:60])}</td>
-            <td>{_escape(log["timestamp"].split("T")[1][:8])}</td>
+            <td>{format_timestamp(log["timestamp"], timezone, time_only=True)}</td>
         </tr>
         <tr class="ip-stats-row" id="stats-row-attack-{_escape(log["ip"]).replace(".", "-")}" style="display: none;">
             <td colspan="5" class="ip-stats-cell">
@@ -117,7 +136,7 @@ def generate_dashboard(stats: dict) -> str:
             <td>{_escape(log["username"])}</td>
             <td>{_escape(log["password"])}</td>
             <td>{_escape(log["path"])}</td>
-            <td>{_escape(log["timestamp"].split("T")[1][:8])}</td>
+            <td>{format_timestamp(log["timestamp"], timezone, time_only=True)}</td>
         </tr>
         <tr class="ip-stats-row" id="stats-row-cred-{_escape(log["ip"]).replace(".", "-")}" style="display: none;">
             <td colspan="5" class="ip-stats-cell">
@@ -352,6 +371,11 @@ def generate_dashboard(stats: dict) -> str:
             color: #58a6ff;
             border: 1px solid #58a6ff;
         }}
+        .category-unknown {{
+            background: #8b949e1a;
+            color: #8b949e;
+            border: 1px solid #8b949e;
+        }}
         .timeline-container {{
             margin-top: 15px;
             padding-top: 15px;
@@ -402,6 +426,9 @@ def generate_dashboard(stats: dict) -> str:
         }}
         .timeline-marker.regular-user {{
             background: #58a6ff;
+        }}
+        .timeline-marker.unknown {{
+            background: #8b949e;
         }}
         .timeline-content {{
             font-size: 12px;
@@ -570,6 +597,30 @@ def generate_dashboard(stats: dict) -> str:
         </div>
     </div>
     <script>
+        // Server timezone configuration
+        const SERVER_TIMEZONE = '{timezone}';
+        
+        // Convert UTC timestamp to configured timezone
+        function formatTimestamp(isoTimestamp) {{
+            if (!isoTimestamp) return 'N/A';
+            try {{
+                const date = new Date(isoTimestamp);
+                return date.toLocaleString('en-US', {{ 
+                    timeZone: SERVER_TIMEZONE,
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false
+                }});
+            }} catch (err) {{
+                console.error('Error formatting timestamp:', err);
+                return new Date(isoTimestamp).toLocaleString();
+            }}
+        }}
+        
         // Add sorting functionality to tables
         document.querySelectorAll('th.sortable').forEach(header => {{
             header.addEventListener('click', function() {{
@@ -684,12 +735,12 @@ def generate_dashboard(stats: dict) -> str:
             
             html += '<div class="stat-row">';
             html += '<span class="stat-label-sm">First Seen:</span>';
-            html += `<span class="stat-value-sm">${{stats.first_seen ? new Date(stats.first_seen).toLocaleString() : 'N/A'}}</span>`;
+            html += `<span class="stat-value-sm">${{formatTimestamp(stats.first_seen)}}</span>`;
             html += '</div>';
             
             html += '<div class="stat-row">';
             html += '<span class="stat-label-sm">Last Seen:</span>';
-            html += `<span class="stat-value-sm">${{stats.last_seen ? new Date(stats.last_seen).toLocaleString() : 'N/A'}}</span>`;
+            html += `<span class="stat-value-sm">${{formatTimestamp(stats.last_seen)}}</span>`;
             html += '</div>';
             
             // Category
@@ -732,7 +783,7 @@ def generate_dashboard(stats: dict) -> str:
                 
                 stats.category_history.forEach((change, index) => {{
                     const categoryClass = change.new_category.toLowerCase().replace('_', '-');
-                    const timestamp = new Date(change.timestamp).toLocaleString();
+                    const timestamp = formatTimestamp(change.timestamp);
                     
                     html += '<div class="timeline-item">';
                     html += `<div class="timeline-marker ${{categoryClass}}"></div>`;
@@ -769,7 +820,8 @@ def generate_dashboard(stats: dict) -> str:
                     attacker: stats.category_scores.attacker || 0,
                     good_crawler: stats.category_scores.good_crawler || 0,
                     bad_crawler: stats.category_scores.bad_crawler || 0,
-                    regular_user: stats.category_scores.regular_user || 0
+                    regular_user: stats.category_scores.regular_user || 0,
+                    unknown: stats.category_scores.unknown || 0
                 }};
                 
                 // Normalize scores for better visualization
@@ -786,14 +838,16 @@ def generate_dashboard(stats: dict) -> str:
                     attacker: '#f85149',
                     good_crawler: '#3fb950',
                     bad_crawler: '#f0883e',
-                    regular_user: '#58a6ff'
+                    regular_user: '#58a6ff',
+                    unknown: '#8b949e'
                 }};
                 
                 const labels = {{
                     attacker: 'Attacker',
                     good_crawler: 'Good Bot',
                     bad_crawler: 'Bad Bot',
-                    regular_user: 'User'
+                    regular_user: 'User',
+                    unknown: 'Unknown'
                 }};
                 
                 // Draw radar background grid
@@ -803,9 +857,9 @@ def generate_dashboard(stats: dict) -> str:
                     html += `<circle cx="${{cx}}" cy="${{cy}}" r="${{r}}" fill="none" stroke="#30363d" stroke-width="0.5"/>`;
                 }}
                 
-                // Draw axes
-                const angles = [0, 90, 180, 270];
-                const keys = ['good_crawler', 'regular_user', 'bad_crawler', 'attacker'];
+                // Draw axes (now with 5 points for pentagon)
+                const angles = [0, 72, 144, 216, 288];
+                const keys = ['good_crawler', 'regular_user', 'unknown', 'bad_crawler', 'attacker'];
                 
                 angles.forEach((angle, i) => {{
                     const rad = (angle - 90) * Math.PI / 180;

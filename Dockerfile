@@ -14,6 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 COPY wordlists.json /app/
 COPY entrypoint.sh /app/
+COPY config.yaml /app/
 
 RUN useradd -m -u 1000 krawl && \
     mkdir -p /app/logs /app/data && \

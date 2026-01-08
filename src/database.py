@@ -9,6 +9,7 @@ import os
 import stat
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, func, distinct, case
 from sqlalchemy.orm import sessionmaker, scoped_session, Session
@@ -127,7 +128,7 @@ class DatabaseManager:
                 method=method[:10],
                 is_suspicious=is_suspicious,
                 is_honeypot_trigger=is_honeypot_trigger,
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(tz=ZoneInfo('UTC'))
             )
             session.add(access_log)
             session.flush()  # Get the ID before committing
@@ -185,7 +186,7 @@ class DatabaseManager:
                 path=sanitize_path(path),
                 username=sanitize_credential(username),
                 password=sanitize_credential(password),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(tz=ZoneInfo('UTC'))
             )
             session.add(credential)
             session.commit()
@@ -207,7 +208,7 @@ class DatabaseManager:
             ip: IP address to update
         """
         sanitized_ip = sanitize_ip(ip)
-        now = datetime.utcnow()
+        now = datetime.now(tz=ZoneInfo('UTC'))
 
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
 
@@ -251,6 +252,12 @@ class DatabaseManager:
         ip_stats.category = category
         ip_stats.category_scores = category_scores
         ip_stats.last_analysis = last_analysis
+        
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Error updating IP stats analysis: {e}")
 
     def  manual_update_category(self, ip: str, category: str) -> None:
         """
@@ -268,14 +275,21 @@ class DatabaseManager:
         # Record the manual category change
         old_category = ip_stats.category
         if old_category != category:
-            self._record_category_change(sanitized_ip, old_category, category, datetime.utcnow())
+            self._record_category_change(sanitized_ip, old_category, category, datetime.now(tz=ZoneInfo('UTC')))
 
         ip_stats.category = category
         ip_stats.manual_category = True
+        
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Error updating manual category: {e}")
 
     def _record_category_change(self, ip: str, old_category: Optional[str], new_category: str, timestamp: datetime) -> None:
         """
         Internal method to record category changes in history.
+        Only records if there's an actual change from a previous category.
 
         Args:
             ip: IP address
@@ -283,6 +297,11 @@ class DatabaseManager:
             new_category: New category
             timestamp: When the change occurred
         """
+        # Don't record initial categorization (when old_category is None)
+        # Only record actual category changes
+        if old_category is None:
+            return
+            
         session = self.session
         try:
             history_entry = CategoryHistory(
@@ -318,7 +337,7 @@ class DatabaseManager:
                 {
                     'old_category': h.old_category,
                     'new_category': h.new_category,
-                    'timestamp': h.timestamp.isoformat()
+                    'timestamp': h.timestamp.isoformat() + '+00:00'
                 }
                 for h in history
             ]
@@ -364,7 +383,7 @@ class DatabaseManager:
                     'method': log.method,
                     'is_suspicious': log.is_suspicious,
                     'is_honeypot_trigger': log.is_honeypot_trigger,
-                    'timestamp': log.timestamp.isoformat(),
+                    'timestamp': log.timestamp.isoformat() + '+00:00',
                     'attack_types': [d.attack_type for d in log.attack_detections]
                 }
                 for log in logs
@@ -457,7 +476,7 @@ class DatabaseManager:
                     'path': attempt.path,
                     'username': attempt.username,
                     'password': attempt.password,
-                    'timestamp': attempt.timestamp.isoformat()
+                    'timestamp': attempt.timestamp.isoformat() + '+00:00'
                 }
                 for attempt in attempts
             ]
@@ -484,8 +503,8 @@ class DatabaseManager:
                 {
                     'ip': s.ip,
                     'total_requests': s.total_requests,
-                    'first_seen': s.first_seen.isoformat(),
-                    'last_seen': s.last_seen.isoformat(),
+                    'first_seen': s.first_seen.isoformat() + '+00:00',
+                    'last_seen': s.last_seen.isoformat() + '+00:00',
                     'country_code': s.country_code,
                     'city': s.city,
                     'asn': s.asn,
@@ -525,8 +544,8 @@ class DatabaseManager:
             return {
                 'ip': stat.ip,
                 'total_requests': stat.total_requests,
-                'first_seen': stat.first_seen.isoformat() if stat.first_seen else None,
-                'last_seen': stat.last_seen.isoformat() if stat.last_seen else None,
+                'first_seen': stat.first_seen.isoformat() + '+00:00' if stat.first_seen else None,
+                'last_seen': stat.last_seen.isoformat() + '+00:00' if stat.last_seen else None,
                 'country_code': stat.country_code,
                 'city': stat.city,
                 'asn': stat.asn,
@@ -537,7 +556,7 @@ class DatabaseManager:
                 'category': stat.category,
                 'category_scores': stat.category_scores or {},
                 'manual_category': stat.manual_category,
-                'last_analysis': stat.last_analysis.isoformat() if stat.last_analysis else None,
+                'last_analysis': stat.last_analysis.isoformat() + '+00:00' if stat.last_analysis else None,
                 'category_history': category_history
             }
         finally:
@@ -671,7 +690,7 @@ class DatabaseManager:
                     'ip': log.ip,
                     'path': log.path,
                     'user_agent': log.user_agent,
-                    'timestamp': log.timestamp.isoformat()
+                    'timestamp': log.timestamp.isoformat() + '+00:00'
                 }
                 for log in logs
             ]
@@ -729,7 +748,7 @@ class DatabaseManager:
                     'ip': log.ip,
                     'path': log.path,
                     'user_agent': log.user_agent,
-                    'timestamp': log.timestamp.isoformat(),
+                    'timestamp': log.timestamp.isoformat() + '+00:00',
                     'attack_types': [d.attack_type for d in log.attack_detections]
                 }
                 for log in logs
