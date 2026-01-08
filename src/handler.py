@@ -407,7 +407,8 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             try:
                 stats = self.tracker.get_stats()
-                self.wfile.write(generate_dashboard(stats).encode())
+                timezone = str(self.config.timezone) if self.config.timezone else 'UTC'
+                self.wfile.write(generate_dashboard(stats, timezone).encode())
             except BrokenPipeError:
                 pass
             except Exception as e:
