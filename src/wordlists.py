@@ -131,7 +131,8 @@ class Wordlists:
     
     @property
     def attack_urls(self):
-        return self._data.get("attack_urls", [])
+        """Deprecated: use attack_patterns instead. Returns attack_patterns for backward compatibility."""
+        return self._data.get("attack_patterns", {})
 
 
 _wordlists_instance = None
