@@ -9,11 +9,12 @@ import os
 import stat
 from datetime import datetime
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, func, distinct, case
 from sqlalchemy.orm import sessionmaker, scoped_session, Session
 
-from models import Base, AccessLog, CredentialAttempt, AttackDetection, IpStats
+from models import Base, AccessLog, CredentialAttempt, AttackDetection, IpStats, CategoryHistory
 from sanitizer import (
     sanitize_ip,
     sanitize_path,
@@ -22,6 +23,9 @@ from sanitizer import (
     sanitize_attack_pattern,
 )
 
+from logger import get_app_logger
+
+applogger = get_app_logger()
 
 class DatabaseManager:
     """
@@ -127,7 +131,7 @@ class DatabaseManager:
                 method=method[:10],
                 is_suspicious=is_suspicious,
                 is_honeypot_trigger=is_honeypot_trigger,
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(tz=ZoneInfo('UTC'))
             )
             session.add(access_log)
             session.flush()  # Get the ID before committing
@@ -154,7 +158,7 @@ class DatabaseManager:
         except Exception as e:
             session.rollback()
             # Log error but don't crash - database persistence is secondary to honeypot function
-            print(f"Database error persisting access: {e}")
+            applogger.critical(f"Database error persisting access: {e}")
             return None
         finally:
             self.close_session()
@@ -185,7 +189,7 @@ class DatabaseManager:
                 path=sanitize_path(path),
                 username=sanitize_credential(username),
                 password=sanitize_credential(password),
-                timestamp=datetime.utcnow()
+                timestamp=datetime.now(tz=ZoneInfo('UTC'))
             )
             session.add(credential)
             session.commit()
@@ -193,7 +197,7 @@ class DatabaseManager:
 
         except Exception as e:
             session.rollback()
-            print(f"Database error persisting credential: {e}")
+            applogger.critical(f"Database error persisting credential: {e}")
             return None
         finally:
             self.close_session()
@@ -207,7 +211,7 @@ class DatabaseManager:
             ip: IP address to update
         """
         sanitized_ip = sanitize_ip(ip)
-        now = datetime.utcnow()
+        now = datetime.now(tz=ZoneInfo('UTC'))
 
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
 
@@ -226,6 +230,7 @@ class DatabaseManager:
     def  update_ip_stats_analysis(self, ip: str, analyzed_metrics: Dict[str, object], category: str, category_scores: Dict[str, int], last_analysis: datetime) -> None:
         """
         Update IP statistics (ip is already persisted).
+        Records category change in history if category has changed.
 
         Args:
             ip: IP address to update
@@ -235,16 +240,28 @@ class DatabaseManager:
             last_analysis: timestamp of last analysis
 
         """
-        print(f"Analyzed metrics {analyzed_metrics}, category {category}, category scores {category_scores}, last analysis {last_analysis}")
+        applogger.debug(f"Analyzed metrics {analyzed_metrics}, category {category}, category scores {category_scores}, last analysis {last_analysis}")
+        applogger.info(f"IP: {ip} category has been updated to {category}")
 
         session = self.session
         sanitized_ip = sanitize_ip(ip)
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
 
+        # Check if category has changed and record it
+        old_category = ip_stats.category
+        if old_category != category:
+            self._record_category_change(sanitized_ip, old_category, category, last_analysis)
+
         ip_stats.analyzed_metrics = analyzed_metrics
         ip_stats.category = category
         ip_stats.category_scores = category_scores
         ip_stats.last_analysis = last_analysis
+        
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Error updating IP stats analysis: {e}")
 
     def manual_update_category(self, ip: str, category: str) -> None:
         """
@@ -256,13 +273,81 @@ class DatabaseManager:
         
         """
         session = self.session
-
         sanitized_ip = sanitize_ip(ip)
         ip_stats = session.query(IpStats).filter(IpStats.ip == sanitized_ip).first()
         
 
+        # Record the manual category change
+        old_category = ip_stats.category
+        if old_category != category:
+            self._record_category_change(sanitized_ip, old_category, category, datetime.now(tz=ZoneInfo('UTC')))
+
         ip_stats.category = category
         ip_stats.manual_category = True
+        
+        try:
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Error updating manual category: {e}")
+
+    def _record_category_change(self, ip: str, old_category: Optional[str], new_category: str, timestamp: datetime) -> None:
+        """
+        Internal method to record category changes in history.
+        Only records if there's an actual change from a previous category.
+
+        Args:
+            ip: IP address
+            old_category: Previous category (None if first categorization)
+            new_category: New category
+            timestamp: When the change occurred
+        """
+        # Don't record initial categorization (when old_category is None)
+        # Only record actual category changes
+        if old_category is None:
+            return
+            
+        session = self.session
+        try:
+            history_entry = CategoryHistory(
+                ip=ip,
+                old_category=old_category,
+                new_category=new_category,
+                timestamp=timestamp
+            )
+            session.add(history_entry)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            applogger.error(f"Error recording category change: {e}")
+
+    def get_category_history(self, ip: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve category change history for a specific IP.
+
+        Args:
+            ip: IP address to get history for
+
+        Returns:
+            List of category change records ordered by timestamp
+        """
+        session = self.session
+        try:
+            sanitized_ip = sanitize_ip(ip)
+            history = session.query(CategoryHistory).filter(
+                CategoryHistory.ip == sanitized_ip
+            ).order_by(CategoryHistory.timestamp.asc()).all()
+
+            return [
+                {
+                    'old_category': h.old_category,
+                    'new_category': h.new_category,
+                    'timestamp': h.timestamp.isoformat() + '+00:00'
+                }
+                for h in history
+            ]
+        finally:
+            self.close_session()
 
     def update_ip_rep_infos(self, ip: str, country_code: str, asn: str, asn_org: str, list_on: Dict[str,str]) -> None:
         """
@@ -326,7 +411,7 @@ class DatabaseManager:
                     'method': log.method,
                     'is_suspicious': log.is_suspicious,
                     'is_honeypot_trigger': log.is_honeypot_trigger,
-                    'timestamp': log.timestamp.isoformat(),
+                    'timestamp': log.timestamp.isoformat() + '+00:00',
                     'attack_types': [d.attack_type for d in log.attack_detections]
                 }
                 for log in logs
@@ -419,7 +504,7 @@ class DatabaseManager:
                     'path': attempt.path,
                     'username': attempt.username,
                     'password': attempt.password,
-                    'timestamp': attempt.timestamp.isoformat()
+                    'timestamp': attempt.timestamp.isoformat() + '+00:00'
                 }
                 for attempt in attempts
             ]
@@ -446,8 +531,8 @@ class DatabaseManager:
                 {
                     'ip': s.ip,
                     'total_requests': s.total_requests,
-                    'first_seen': s.first_seen.isoformat(),
-                    'last_seen': s.last_seen.isoformat(),
+                    'first_seen': s.first_seen.isoformat() + '+00:00',
+                    'last_seen': s.last_seen.isoformat() + '+00:00',
                     'country_code': s.country_code,
                     'city': s.city,
                     'asn': s.asn,
@@ -461,6 +546,47 @@ class DatabaseManager:
                 }
                 for s in stats
             ]
+        finally:
+            self.close_session()
+
+    def get_ip_stats_by_ip(self, ip: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve IP statistics for a specific IP address.
+
+        Args:
+            ip: The IP address to look up
+
+        Returns:
+            Dictionary with IP stats or None if not found
+        """
+        session = self.session
+        try:
+            stat = session.query(IpStats).filter(IpStats.ip == ip).first()
+            
+            if not stat:
+                return None
+            
+            # Get category history for this IP
+            category_history = self.get_category_history(ip)
+            
+            return {
+                'ip': stat.ip,
+                'total_requests': stat.total_requests,
+                'first_seen': stat.first_seen.isoformat() + '+00:00' if stat.first_seen else None,
+                'last_seen': stat.last_seen.isoformat() + '+00:00' if stat.last_seen else None,
+                'country_code': stat.country_code,
+                'city': stat.city,
+                'asn': stat.asn,
+                'asn_org': stat.asn_org,
+                'reputation_score': stat.reputation_score,
+                'reputation_source': stat.reputation_source,
+                'analyzed_metrics': stat.analyzed_metrics or {},
+                'category': stat.category,
+                'category_scores': stat.category_scores or {},
+                'manual_category': stat.manual_category,
+                'last_analysis': stat.last_analysis.isoformat() + '+00:00' if stat.last_analysis else None,
+                'category_history': category_history
+            }
         finally:
             self.close_session()
 
@@ -592,7 +718,7 @@ class DatabaseManager:
                     'ip': log.ip,
                     'path': log.path,
                     'user_agent': log.user_agent,
-                    'timestamp': log.timestamp.isoformat()
+                    'timestamp': log.timestamp.isoformat() + '+00:00'
                 }
                 for log in logs
             ]
@@ -650,7 +776,7 @@ class DatabaseManager:
                     'ip': log.ip,
                     'path': log.path,
                     'user_agent': log.user_agent,
-                    'timestamp': log.timestamp.isoformat(),
+                    'timestamp': log.timestamp.isoformat() + '+00:00',
                     'attack_types': [d.attack_type for d in log.attack_detections]
                 }
                 for log in logs

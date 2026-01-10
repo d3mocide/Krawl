@@ -407,17 +407,75 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             try:
                 stats = self.tracker.get_stats()
-                self.wfile.write(generate_dashboard(stats).encode())
+                timezone = str(self.config.timezone) if self.config.timezone else 'UTC'
+                dashboard_path = self.config.dashboard_secret_path
+                self.wfile.write(generate_dashboard(stats, timezone, dashboard_path).encode())
             except BrokenPipeError:
                 pass
             except Exception as e:
                 self.app_logger.error(f"Error generating dashboard: {e}")
             return
+        
+        # API endpoint for fetching IP stats
+        if self.config.dashboard_secret_path and self.path.startswith(f"{self.config.dashboard_secret_path}/api/ip-stats/"):
+            ip_address = self.path.replace(f"{self.config.dashboard_secret_path}/api/ip-stats/", "")
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.send_header('Access-Control-Allow-Origin', '*')
+            # Prevent browser caching - force fresh data from database every time
+            self.send_header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+            self.send_header('Pragma', 'no-cache')
+            self.send_header('Expires', '0')
+            self.end_headers()
+            try:
+                from database import get_database
+                import json
+                db = get_database()
+                ip_stats = db.get_ip_stats_by_ip(ip_address)
+                if ip_stats:
+                    self.wfile.write(json.dumps(ip_stats).encode())
+                else:
+                    self.wfile.write(json.dumps({'error': 'IP not found'}).encode())
+            except BrokenPipeError:
+                pass
+            except Exception as e:
+                self.app_logger.error(f"Error fetching IP stats: {e}")
+                self.wfile.write(json.dumps({'error': str(e)}).encode())
+            return
+
+        # API endpoint for downloading malicious IPs file
+        if self.config.dashboard_secret_path and self.path == f"{self.config.dashboard_secret_path}/api/download/malicious_ips.txt":
+            import os
+            file_path = os.path.join(os.path.dirname(__file__), 'exports', 'malicious_ips.txt')
+            try:
+                if os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        content = f.read()
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/plain')
+                    self.send_header('Content-Disposition', 'attachment; filename="malicious_ips.txt"')
+                    self.send_header('Content-Length', str(len(content)))
+                    self.end_headers()
+                    self.wfile.write(content)
+                else:
+                    self.send_response(404)
+                    self.send_header('Content-type', 'text/plain')
+                    self.end_headers()
+                    self.wfile.write(b'File not found')
+            except BrokenPipeError:
+                pass
+            except Exception as e:
+                self.app_logger.error(f"Error serving malicious IPs file: {e}")
+                self.send_response(500)
+                self.send_header('Content-type', 'text/plain')
+                self.end_headers()
+                self.wfile.write(b'Internal server error')
+            return
 
         self.tracker.record_access(client_ip, self.path, user_agent, method='GET')
         
-        self.analyzer.infer_user_category(client_ip)
-        self.analyzer.update_ip_rep_infos(client_ip)
+        # self.analyzer.infer_user_category(client_ip)
+        # self.analyzer.update_ip_rep_infos(client_ip)
 
         if self.tracker.is_suspicious_user_agent(user_agent):
             self.access_logger.warning(f"[SUSPICIOUS] {client_ip} - {user_agent[:50]} - {self.path}")
