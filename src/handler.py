@@ -474,7 +474,8 @@ class Handler(BaseHTTPRequestHandler):
 
         self.tracker.record_access(client_ip, self.path, user_agent, method='GET')
         
-        self.analyzer.infer_user_category(client_ip)
+        # self.analyzer.infer_user_category(client_ip)
+        # self.analyzer.update_ip_rep_infos(client_ip)
 
         if self.tracker.is_suspicious_user_agent(user_agent):
             self.access_logger.warning(f"[SUSPICIOUS] {client_ip} - {user_agent[:50]} - {self.path}")

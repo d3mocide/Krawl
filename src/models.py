@@ -134,6 +134,7 @@ class IpStats(Base):
     city: Mapped[Optional[str]] = mapped_column(String(MAX_CITY_LENGTH), nullable=True)
     asn: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     asn_org: Mapped[Optional[str]] = mapped_column(String(MAX_ASN_ORG_LENGTH), nullable=True)
+    list_on: Mapped[Optional[Dict[str,str]]] = mapped_column(JSON, nullable=True)
 
     # Reputation fields (populated by future enrichment)
     reputation_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
