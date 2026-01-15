@@ -73,12 +73,18 @@ def main():
             "attack_url": 0
         }
     }
-    accesses = db_manager.get_access_logs(limit=999999999)
-    ips = {item['ip'] for item in accesses}
+    # Get IPs with recent activity (last minute to match cron schedule)
+    recent_accesses = db_manager.get_access_logs(limit=999999999, since_minutes=1)
+    ips_to_analyze = {item['ip'] for item in recent_accesses}
 
-    for ip in ips:
-        ip_accesses = [item for item in accesses if item["ip"] == ip]
-        total_accesses_count = len(accesses)
+    if not ips_to_analyze:
+        app_logger.debug("[Background Task] analyze-ips: No recent activity, skipping")
+        return
+
+    for ip in ips_to_analyze:
+        # Get full history for this IP to perform accurate analysis
+        ip_accesses = db_manager.get_access_logs(limit=999999999, ip_filter=ip)
+        total_accesses_count = len(ip_accesses)
         if total_accesses_count <= 0:
             return
         

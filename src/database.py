@@ -7,7 +7,7 @@ Provides SQLAlchemy session management and database initialization.
 
 import os
 import stat
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from zoneinfo import ZoneInfo
 
@@ -390,6 +390,7 @@ class DatabaseManager:
     def get_unenriched_ips(self, limit: int = 100) -> List[str]:
         """
         Get IPs that don't have reputation data yet.
+        Excludes RFC1918 private addresses and other non-routable IPs.
 
         Args:
             limit: Maximum number of IPs to return
@@ -400,7 +401,18 @@ class DatabaseManager:
         session = self.session
         try:
             ips = session.query(IpStats.ip).filter(
-                IpStats.country_code.is_(None)
+                IpStats.country_code.is_(None),
+                ~IpStats.ip.like('10.%'),
+                ~IpStats.ip.like('172.16.%'),
+                ~IpStats.ip.like('172.17.%'),
+                ~IpStats.ip.like('172.18.%'),
+                ~IpStats.ip.like('172.19.%'),
+                ~IpStats.ip.like('172.2_.%'),
+                ~IpStats.ip.like('172.30.%'),
+                ~IpStats.ip.like('172.31.%'),
+                ~IpStats.ip.like('192.168.%'),
+                ~IpStats.ip.like('127.%'),
+                ~IpStats.ip.like('169.254.%')
             ).limit(limit).all()
             return [ip[0] for ip in ips]
         finally:
@@ -411,7 +423,8 @@ class DatabaseManager:
         limit: int = 100,
         offset: int = 0,
         ip_filter: Optional[str] = None,
-        suspicious_only: bool = False
+        suspicious_only: bool = False,
+        since_minutes: Optional[int] = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieve access logs with optional filtering.
@@ -421,6 +434,7 @@ class DatabaseManager:
             offset: Number of records to skip
             ip_filter: Filter by IP address
             suspicious_only: Only return suspicious requests
+            since_minutes: Only return logs from the last N minutes
 
         Returns:
             List of access log dictionaries
@@ -433,6 +447,9 @@ class DatabaseManager:
                 query = query.filter(AccessLog.ip == sanitize_ip(ip_filter))
             if suspicious_only:
                 query = query.filter(AccessLog.is_suspicious == True)
+            if since_minutes is not None:
+                cutoff_time = datetime.now(tz=ZoneInfo('UTC')) - timedelta(minutes=since_minutes)
+                query = query.filter(AccessLog.timestamp >= cutoff_time)
 
             logs = query.offset(offset).limit(limit).all()
 
