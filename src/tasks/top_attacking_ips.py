@@ -28,7 +28,7 @@ OUTPUT_FILE = os.path.join(EXPORTS_DIR, "malicious_ips.txt")
 # ----------------------
 def has_recent_honeypot_access(session, minutes: int = 5) -> bool:
     """Check if honeypot was accessed in the last N minutes."""
-    cutoff_time = datetime.now(tz=ZoneInfo('UTC')) - timedelta(minutes=minutes)
+    cutoff_time = datetime.now() - timedelta(minutes=minutes)
     count = session.query(AccessLog).filter(
         AccessLog.is_honeypot_trigger == True,
         AccessLog.timestamp >= cutoff_time
