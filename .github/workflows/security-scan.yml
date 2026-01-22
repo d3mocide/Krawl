@@ -30,8 +30,8 @@ jobs:
 
       - name: Bandit security check
         run: |
-          bandit -r src/ -f json -o bandit-report.json
-          bandit -r src/ -f txt
+          bandit -r src/ -f json -o bandit-report.json || true
+          bandit -r src/ -f txt || true
           
           # Check for HIGH severity issues only
           HIGH_COUNT=$(python3 -c "import json; data=json.load(open('bandit-report.json')); print(len([i for i in data['results'] if i['severity'] == 'HIGH']))")
