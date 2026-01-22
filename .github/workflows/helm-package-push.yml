@@ -6,8 +6,10 @@ on:
       - main
       - beta
       - dev
+      - github-actions-ci
     paths:
       - 'helm/**'
+      - '.github/workflows/helm-package-push.yml'
     tags:
       - 'v*'
   release:
@@ -39,37 +41,36 @@ jobs:
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
         
-      - name: Extract version from Chart.yaml
-        id: version
+      - name: Set Helm chart version and package
         run: |
-          VERSION=$(grep '^version:' ./helm/Chart.yaml | awk '{print $2}' | tr -d '"')
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Package Helm chart
-        run: |
+          CHART_NAME=$(grep '^name:' ./helm/Chart.yaml | awk '{print $2}')
+          BASE_VERSION=$(grep '^version:' ./helm/Chart.yaml | awk '{print $2}')
+          
+          if [[ "${{ github.ref_name }}" == "main" ]]; then
+            CHART_VERSION="${BASE_VERSION}"
+          else
+            CHART_VERSION="${BASE_VERSION}-${{ github.ref_name }}"
+          fi
+          
+          # Update Chart.yaml temporarily with the versioned name
+          sed -i "s/^version:.*/version: ${CHART_VERSION}/" ./helm/Chart.yaml
+          
+          # Package the helm chart
           helm package ./helm
+          
+          echo "CHART_NAME=${CHART_NAME}" >> $GITHUB_ENV
+          echo "CHART_VERSION=${CHART_VERSION}" >> $GITHUB_ENV
 
       - name: Push Helm chart to registry
         run: |
-          CHART_VERSION=$(grep '^version:' ./helm/Chart.yaml | awk '{print $2}')
-          CHART_FILE=$(grep '^name:' ./helm/Chart.yaml | awk '{print $2}')
-          CHART_PATH="${CHART_FILE}-${CHART_VERSION}.tgz"
-          
-          # Determine tag based on branch
-          if [[ "${{ github.ref_name }}" == "main" ]]; then
-            TAG="${{ steps.version.outputs.version }}"
-            helm push "$CHART_PATH" oci://${{ env.REGISTRY }}/$CHART_FILE:$TAG
-            helm push "$CHART_PATH" oci://${{ env.REGISTRY }}/$CHART_FILE:latest
-          else
-            TAG="${{ steps.version.outputs.version }}-${{ github.ref_name }}"
-            helm push "$CHART_PATH" oci://${{ env.REGISTRY }}/$CHART_FILE:$TAG
-          fi
+          helm push ${{ env.CHART_NAME }}-${{ env.CHART_VERSION }}.tgz oci://${{ env.REGISTRY }}
 
       - name: Chart pushed
         run: |
+          CHART_VERSION=$(grep '^version:' ./helm/Chart.yaml | awk '{print $2}')
           CHART_FILE=$(grep '^name:' ./helm/Chart.yaml | awk '{print $2}')
           if [[ "${{ github.ref_name }}" == "main" ]]; then
-            echo "Chart pushed: $CHART_FILE:${{ steps.version.outputs.version }} and $CHART_FILE:latest"
+            echo "Chart pushed: ${CHART_FILE}:${CHART_VERSION}"
           else
-            echo "Chart pushed: $CHART_FILE:${{ steps.version.outputs.version }}-${{ github.ref_name }}"
+            echo "Chart pushed: ${CHART_FILE}:${CHART_VERSION}-${{ github.ref_name }}"
           fi
