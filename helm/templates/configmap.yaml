@@ -32,3 +32,10 @@ data:
       retention_days: {{ .Values.config.database.retention_days }}
     behavior:
       probability_error_codes: {{ .Values.config.behavior.probability_error_codes }}
+    analyzer:
+      http_risky_methods_threshold: {{ .Values.config.analyzer.http_risky_methods_threshold }}
+      violated_robots_threshold: {{ .Values.config.analyzer.violated_robots_threshold }}
+      uneven_request_timing_threshold: {{ .Values.config.analyzer.uneven_request_timing_threshold }}
+      uneven_request_timing_time_window_seconds: {{ .Values.config.analyzer.uneven_request_timing_time_window_seconds }}
+      user_agents_used_threshold: {{ .Values.config.analyzer.user_agents_used_threshold }}
+      attack_urls_threshold: {{ .Values.config.analyzer.attack_urls_threshold }}
