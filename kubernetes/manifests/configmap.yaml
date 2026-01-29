@@ -1,15 +1,19 @@
+# Source: krawl-chart/templates/configmap.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: krawl-config
   namespace: krawl-system
+  labels:
+    app.kubernetes.io/name: krawl
+    app.kubernetes.io/instance: krawl
+    app.kubernetes.io/version: "1.0.0"
 data:
   config.yaml: |
     # Krawl Honeypot Configuration
     server:
       port: 5000
       delay: 100
-      timezone: null
     links:
       min_length: 5
       max_length: 15
@@ -22,10 +26,6 @@ data:
       token_tries: 10
     dashboard:
       secret_path: null
-    api:
-      server_url: null
-      server_port: 8080
-      server_path: "/api/v2/users"
     database:
       path: "data/krawl.db"
       retention_days: 30
