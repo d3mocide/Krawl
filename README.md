@@ -1,16 +1,16 @@
-<h1 align="center">🕷️ Krawl</h1>
+<h1 align="center">Krawl</h1>
 
 <h3 align="center">
   <a name="readme-top"></a>
   <img
-    src="img/krawl-logo.jpg"
-    height="200"
+    src="img/krawl-svg.svg"
+    height="250"
   >
 </h3>
 <div align="center">
 
 <p align="center">
-  A modern, customizable zero-dependencies honeypot server designed to detect and track malicious activity through deceptive web pages, fake credentials, and canary tokens.
+  A modern, customizable web honeypot server designed to detect and track malicious activity from attackers and web crawlers through deceptive web pages, fake credentials, and canary tokens.
 </p>
 
 <div align="center">
@@ -38,7 +38,7 @@
 
 <p align="center">
   <a href="#what-is-krawl">What is Krawl?</a> •
-  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-installation">Installation</a> •
   <a href="#honeypot-pages">Honeypot Pages</a> •
   <a href="#dashboard">Dashboard</a> •
   <a href="./ToDo.md">Todo</a> •
@@ -55,7 +55,7 @@ Tip: crawl the `robots.txt` paths for additional fun
 
 ## What is Krawl?
 
-**Krawl** is a cloud‑native deception server designed to detect, delay, and analyze malicious web crawlers and automated scanners.
+**Krawl** is a cloud‑native deception server designed to detect, delay, and analyze malicious attackers, web crawlers and automated scanners.
 
 It creates realistic fake web applications filled with low‑hanging fruit such as admin panels, configuration files, and exposed fake credentials to attract and identify suspicious activity.
 
@@ -68,156 +68,197 @@ It features:
 - **Honeypot Paths**: Advertised in robots.txt to catch scanners
 - **Fake Credentials**: Realistic-looking usernames, passwords, API keys
 - **[Canary Token](#customizing-the-canary-token) Integration**: External alert triggering
+- **Random server headers**: Confuse attacks based on server header and version
 - **Real-time Dashboard**: Monitor suspicious activity
 - **Customizable Wordlists**: Easy JSON-based configuration
 - **Random Error Injection**: Mimic real server behavior
 
-![asd](img/deception-page.png)
+![dashboard](img/deception-page.png)
 
-## 🚀 Quick Start
-## Helm Chart
+![geoip](img/geoip_dashboard.png)
 
-Install with default values
+## 🚀 Installation
 
-```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart \
-  --namespace krawl-system \
-  --create-namespace
-```
+### Docker Run
 
-Install with custom [canary token](#customizing-the-canary-token) 
-
-```bash
-helm install krawl oci://ghcr.io/blessedrebus/krawl-chart \
-  --namespace krawl-system \
-  --create-namespace \
-  --set config.canaryTokenUrl="http://your-canary-token-url"
-```
-
-To access the deception server
-
-```bash
-kubectl get svc krawl -n krawl-system
-```
-
-Once the EXTERNAL-IP is assigned, access your deception server at:
-
-```
-http://<EXTERNAL-IP>:5000
-```
-
-## Kubernetes / Kustomize
-Apply all manifests with
-
-```bash
-kubectl apply -f https://raw.githubusercontent.com/BlessedRebuS/Krawl/refs/heads/main/manifests/krawl-all-in-one-deploy.yaml
-```
-
-Retrieve dashboard path with
-```bash
-kubectl get secret krawl-server -n krawl-system -o jsonpath='{.data.dashboard-path}' | base64 -d
-```
-
-Or clone the repo and apply the `manifest` folder with
-
-```bash
-kubectl apply -k manifests
-```
-
-## Docker
-Run Krawl as a docker container with
+Run Krawl with the latest image:
 
 ```bash
 docker run -d \
   -p 5000:5000 \
-  -e CANARY_TOKEN_URL="http://your-canary-token-url" \
+  -e KRAWL_PORT=5000 \
+  -e KRAWL_DELAY=100 \
+  -e KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard" \
+  -e KRAWL_DATABASE_RETENTION_DAYS=30 \
   --name krawl \
   ghcr.io/blessedrebus/krawl:latest
 ```
 
-## Docker Compose
-Run Krawl with docker-compose in the project folder with
+Access the server at `http://localhost:5000`
+
+### Docker Compose
+
+Create a `docker-compose.yaml` file:
+
+```yaml
+services:
+  krawl:
+    image: ghcr.io/blessedrebus/krawl:latest
+    container_name: krawl-server
+    ports:
+      - "5000:5000"
+    environment:
+      - CONFIG_LOCATION=config.yaml
+      - TZ="Europe/Rome"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - krawl-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  krawl-data:
+```
+
+Run with:
 
 ```bash
 docker-compose up -d
 ```
 
-Stop it with
+Stop with:
 
 ```bash
 docker-compose down
 ```
 
-## Python 3.11+
+### Kubernetes
+**Krawl is also available natively on Kubernetes**. Installation can be done either [via manifest](kubernetes/README.md) or [using the helm chart](helm/README.md).
 
-Clone the repository
+## Use Krawl to Ban Malicious IPs
+Krawl uses a reputation-based system to classify attacker IP addresses. Every five minutes, Krawl exports the identified malicious IPs to a `malicious_ips.txt` file.
+
+This file can either be mounted from the Docker container into another system or downloaded directly via `curl`:
 
 ```bash
-git clone https://github.com/blessedrebus/krawl.git
-cd krawl/src
+curl https://your-krawl-instance/<DASHBOARD-PATH>/api/download/malicious_ips.txt
 ```
-Run the server
+
+This file can be used to [update a set of firewall rules](https://www.allthingstech.ch/using-opnsense-and-ip-blocklists-to-block-malicious-traffic), for example on OPNsense and pfSense, enabling automatic blocking of malicious IPs or using IPtables
+
+## IP Reputation
+Krawl [uses tasks that analyze recent traffic to build and continuously update an IP reputation](src/tasks/analyze_ips.py) score. It runs periodically and evaluates each active IP address based on multiple behavioral indicators to classify it as an attacker, crawler, or regular user. Thresholds are fully customizable.
+
+![ip reputation](img/ip-reputation.png)
+
+The analysis includes:
+- **Risky HTTP methods usage** (e.g. POST, PUT, DELETE ratios)
+- **Robots.txt violations**
+- **Request timing anomalies** (bursty or irregular patterns)
+- **User-Agent consistency**
+- **Attack URL detection** (e.g. SQL injection, XSS patterns)
+
+Each signal contributes to a weighted scoring model that assigns a reputation category:
+- `attacker`
+- `bad_crawler`
+- `good_crawler`
+- `regular_user`
+- `unknown` (for insufficient data)
+
+The resulting scores and metrics are stored in the database and used by Krawl to drive dashboards, reputation tracking, and automated mitigation actions such as IP banning or firewall integration.
+
+## Forward server header
+If Krawl is deployed behind a proxy such as NGINX the **server header** should be forwarded using the following configuration in your proxy:
+
 ```bash
-python3 server.py
+location / {
+    proxy_pass https://your-krawl-instance;
+    proxy_pass_header Server;
+}
 ```
 
-Visit
+## API
+Krawl uses the following APIs
+- https://iprep.lcrawl.com (IP Reputation)
+- https://nominatim.openstreetmap.org/reverse (Reverse IP Lookup)
+- https://api.ipify.org (Public IP discovery)
+- http://ident.me (Public IP discovery)
+- https://ifconfig.me (Public IP discovery)
 
-`http://localhost:5000`
+## Configuration
+Krawl uses a **configuration hierarchy** in which **environment variables take precedence over the configuration file**. This approach is recommended for Docker deployments and quick out-of-the-box customization.
 
-To access the dashboard
+### Configuration via Enviromental Variables
 
-`http://localhost:5000/<dashboard-secret-path>`
+| Environment Variable | Description | Default |
+|----------------------|-------------|---------|
+| `CONFIG_LOCATION` | Path to yaml config file | `config.yaml` |
+| `KRAWL_PORT` | Server listening port | `5000` |
+| `KRAWL_DELAY` | Response delay in milliseconds | `100` |
+| `KRAWL_SERVER_HEADER` | HTTP Server header for deception | `""` |
+| `KRAWL_LINKS_LENGTH_RANGE` | Link length range as `min,max` | `5,15` |
+| `KRAWL_LINKS_PER_PAGE_RANGE` | Links per page as `min,max` | `10,15` |
+| `KRAWL_CHAR_SPACE` | Characters used for link generation | `abcdefgh...` |
+| `KRAWL_MAX_COUNTER` | Initial counter value | `10` |
+| `KRAWL_CANARY_TOKEN_URL` | External canary token URL | None |
+| `KRAWL_CANARY_TOKEN_TRIES` | Requests before showing canary token | `10` |
+| `KRAWL_DASHBOARD_SECRET_PATH` | Custom dashboard path | Auto-generated |
+| `KRAWL_PROBABILITY_ERROR_CODES` | Error response probability (0-100%) | `0` |
+| `KRAWL_DATABASE_PATH` | Database file location | `data/krawl.db` |
+| `KRAWL_DATABASE_RETENTION_DAYS` | Days to retain data in database | `30` |
+| `KRAWL_HTTP_RISKY_METHODS_THRESHOLD` | Threshold for risky HTTP methods detection | `0.1` |
+| `KRAWL_VIOLATED_ROBOTS_THRESHOLD` | Threshold for robots.txt violations | `0.1` |
+| `KRAWL_UNEVEN_REQUEST_TIMING_THRESHOLD` | Coefficient of variation threshold for timing | `0.5` |
+| `KRAWL_UNEVEN_REQUEST_TIMING_TIME_WINDOW_SECONDS` | Time window for request timing analysis in seconds | `300` |
+| `KRAWL_USER_AGENTS_USED_THRESHOLD` | Threshold for detecting multiple user agents | `2` |
+| `KRAWL_ATTACK_URLS_THRESHOLD` | Threshold for attack URL detection | `1` |
+| `KRAWL_INFINITE_PAGES_FOR_MALICIOUS` | Serve infinite pages to malicious IPs | `true` |
+| `KRAWL_MAX_PAGES_LIMIT` | Maximum page limit for crawlers | `250` |
+| `KRAWL_BAN_DURATION_SECONDS` | Ban duration in seconds for rate-limited IPs | `600` |
 
-## Configuration via Environment Variables
+For example
 
-To customize the deception server installation several **environment variables** can be specified.
+```bash
+# Set canary token
+export CONFIG_LOCATION="config.yaml" 
+export KRAWL_CANARY_TOKEN_URL="http://your-canary-token-url"
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server listening port | `5000` |
-| `DELAY` | Response delay in milliseconds | `100` |
-| `LINKS_MIN_LENGTH` | Minimum random link length | `5` |
-| `LINKS_MAX_LENGTH` | Maximum random link length | `15` |
-| `LINKS_MIN_PER_PAGE` | Minimum links per page | `10` |
-| `LINKS_MAX_PER_PAGE` | Maximum links per page | `15` |
-| `MAX_COUNTER` | Initial counter value | `10` |
-| `CANARY_TOKEN_TRIES` | Requests before showing canary token | `10` |
-| `CANARY_TOKEN_URL` | External canary token URL | None |
-| `DASHBOARD_SECRET_PATH` | Custom dashboard path | Auto-generated |
-| `PROBABILITY_ERROR_CODES` | Error response probability (0-100%) | `0` |
-| `SERVER_HEADER` | HTTP Server header for deception | `Apache/2.2.22 (Ubuntu)` |
+# Set number of pages range (min,max format)
+export KRAWL_LINKS_PER_PAGE_RANGE="5,25"
+
+# Set analyzer thresholds
+export KRAWL_HTTP_RISKY_METHODS_THRESHOLD="0.2"
+export KRAWL_VIOLATED_ROBOTS_THRESHOLD="0.15"
+
+# Set custom dashboard path
+export KRAWL_DASHBOARD_SECRET_PATH="/my-secret-dashboard"
+```
+
+Example of a Docker run with env variables:
+
+```bash
+docker run -d \
+  -p 5000:5000 \
+  -e KRAWL_PORT=5000 \
+  -e KRAWL_DELAY=100 \
+  -e KRAWL_CANARY_TOKEN_URL="http://your-canary-token-url" \
+  --name krawl \
+  ghcr.io/blessedrebus/krawl:latest
+```
+
+### Configuration via config.yaml
+You can use the [config.yaml](config.yaml) file for more advanced configurations, such as Docker Compose or Helm chart deployments.
+
+# Honeypot
+Below is a complete overview of the Krawl honeypot’s capabilities
 
 ## robots.txt
-The actual (juicy) robots.txt configuration is the following
-
-```txt
-Disallow: /admin/
-Disallow: /api/
-Disallow: /backup/
-Disallow: /config/
-Disallow: /database/
-Disallow: /private/
-Disallow: /uploads/
-Disallow: /wp-admin/
-Disallow: /phpMyAdmin/
-Disallow: /admin/login.php
-Disallow: /api/v1/users
-Disallow: /api/v2/secrets
-Disallow: /.env
-Disallow: /credentials.txt
-Disallow: /passwords.txt
-Disallow: /.git/
-Disallow: /backup.sql
-Disallow: /db_backup.sql
-```
+The actual (juicy) robots.txt configuration [is the following](src/templates/html/robots.txt). 
 
 ## Honeypot pages
 Requests to common admin endpoints (`/admin/`, `/wp-admin/`, `/phpMyAdmin/`) return a fake login page. Any login attempt triggers a 1-second delay to simulate real processing and is fully logged in the dashboard (credentials, IP, headers, timing).
 
-<div align="center">
-  <img src="img/admin-page.png" width="60%" />
-</div>
+![admin page](img/admin-page.png)
+
 
 Requests to paths like `/backup/`, `/config/`, `/database/`, `/private/`, or `/uploads/` return a fake directory listing populated with “interesting” files, each assigned a random file size to look realistic.
 
@@ -225,21 +266,23 @@ Requests to paths like `/backup/`, `/config/`, `/database/`, `/private/`, or `/u
 
 The `.env` endpoint exposes fake database connection strings, **AWS API keys**, and **Stripe secrets**. It intentionally returns an error due to the `Content-Type` being `application/json` instead of plain text, mimicking a “juicy” misconfiguration that crawlers and scanners often flag as information leakage.
 
-![env-page](img/env-page.png)
+The `/server` page displays randomly generated fake error information for each known server.
+
+![server and env page](img/server-and-env-page.png)
 
 The pages `/api/v1/users` and `/api/v2/secrets` show fake users and random secrets in JSON format
 
-<div align="center">
-  <img src="img/api-users-page.png" width="45%" style="vertical-align: middle; margin: 0 10px;" />
-  <img src="img/api-secrets-page.png" width="45%" style="vertical-align: middle; margin: 0 10px;" />
-</div>
+![users and secrets](img/users-and-secrets.png)
 
 The pages `/credentials.txt` and `/passwords.txt` show fake users and random secrets 
 
-<div align="center">
-  <img src="img/credentials-page.png" width="35%" style="vertical-align: middle; margin: 0 10px;" />
-  <img src="img/passwords-page.png" width="45%" style="vertical-align: middle; margin: 0 10px;" />
-</div>
+![credentials and passwords](img/credentials-and-passwords.png)
+
+Pages such as `/users`, `/search`, `/contact`, `/info`, `/input`, and `/feedback`, along with APIs like `/api/sql` and `/api/database`, are designed to lure attackers into performing attacks such as **SQL injection** or **XSS**. 
+
+![sql injection](img/sql_injection.png)
+
+Automated tools like **SQLMap** will receive a different randomized database error on each request, increasing scan noise and confusing the attacker. All detected attacks are logged and displayed in the dashboard.
 
 ## Customizing the Canary Token
 To create a custom canary token, visit https://canarytokens.org
@@ -280,11 +323,13 @@ Access the dashboard at `http://<server-ip>:<port>/<dashboard-path>`
 
 The dashboard shows:
 - Total and unique accesses
-- Suspicious activity detection
-- Top IPs, paths, and user-agents
+- Suspicious activity and attack detection
+- Top IPs, paths, user-agents and GeoIP localization
 - Real-time monitoring
 
-The attackers' triggered honeypot path and the suspicious activity (such as failed login attempts) are logged
+The attackers’ access to the honeypot endpoint and related suspicious activities (such as failed login attempts) are logged. 
+
+Krawl also implements a scoring system designed to distinguish between malicious and legitimate behavior on the website.
 
 ![dashboard-1](img/dashboard-1.png)
 
@@ -292,14 +337,7 @@ The top IP Addresses is shown along with top paths and User Agents
 
 ![dashboard-2](img/dashboard-2.png)
 
-### Retrieving Dashboard Path
-
-Check server startup logs or get the secret with 
-
-```bash
-kubectl get secret krawl-server -n krawl-system \
-  -o jsonpath='{.data.dashboard-path}' | base64 -d && echo
-```
+![dashboard-3](img/dashboard-3.png)
 
 ## 🤝 Contributing
 

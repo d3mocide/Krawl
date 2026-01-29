@@ -353,10 +353,21 @@
     }
   },
   "attack_patterns": {
-    "path_traversal": "\\.\\.",
+    "path_traversal": "(\\.\\.|%2e%2e|%252e%252e|\\.{2,}|%c0%ae|%c1%9c)",
     "sql_injection": "('|\"|`|--|#|/\\*|\\*/|\\bunion\\b|\\bunion\\s+select\\b|\\bor\\b.*=.*|\\band\\b.*=.*|'.*or.*'.*=.*'|\\bsleep\\b|\\bwaitfor\\b|\\bdelay\\b|\\bbenchmark\\b|;.*select|;.*drop|;.*insert|;.*update|;.*delete|\\bexec\\b|\\bexecute\\b|\\bxp_cmdshell\\b|information_schema|table_schema|table_name)",
     "xss_attempt": "(<script|</script|javascript:|onerror=|onload=|onclick=|onmouseover=|onfocus=|onblur=|<iframe|<img|<svg|<embed|<object|<body|<input|eval\\(|alert\\(|prompt\\(|confirm\\(|document\\.|window\\.|<style|expression\\(|vbscript:|data:text/html)",
-    "common_probes": "(wp-admin|phpmyadmin|\\.env|\\.git|/admin|/config)",
-    "shell_injection": "(\\||;|`|\\$\\(|&&)"
-  }
+    "shell_injection": "(\\||;|`|\\$\\(|&&|\\bnc\\b|\\bnetcat\\b|\\bwget\\b|\\bcurl\\b|/bin/bash|/bin/sh|cmd\\.exe)",
+    "lfi_rfi": "(file://|php://|expect://|data://|zip://|phar://|/etc/passwd|/etc/shadow|/proc/self|c:\\\\windows)",
+    "xxe_injection": "(<!ENTITY|<!DOCTYPE|SYSTEM|PUBLIC)",
+    "ldap_injection": "(\\*\\)|\\(\\||\\(&)",
+    "command_injection": "(&&|\\|\\||;|\\$\\{|\\$\\(|`)"
+  },
+  "server_headers": [
+    "Apache/2.4.41 (Ubuntu)",
+    "nginx/1.18.0",
+    "Microsoft-IIS/10.0",
+    "cloudflare",
+    "AmazonS3",
+    "gunicorn/20.1.0"
+  ]
 }

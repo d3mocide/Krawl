@@ -8,10 +8,26 @@ Provides two loggers: app (application) and access (HTTP access logs).
 import logging
 import os
 from logging.handlers import RotatingFileHandler
+from datetime import datetime
+
+
+class TimezoneFormatter(logging.Formatter):
+    """Custom formatter that respects configured timezone"""
+
+    def __init__(self, fmt=None, datefmt=None):
+        super().__init__(fmt, datefmt)
+
+    def formatTime(self, record, datefmt=None):
+        """Override formatTime to use configured timezone"""
+        dt = datetime.fromtimestamp(record.created)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat()
 
 
 class LoggerManager:
     """Singleton logger manager for the application."""
+
     _instance = None
 
     def __new__(cls):
@@ -22,7 +38,7 @@ class LoggerManager:
 
     def initialize(self, log_dir: str = "logs") -> None:
         """
-        Initialize the logging system with rotating file handlers.
+        Initialize the logging system with rotating file handlers.loggers
 
         Args:
             log_dir: Directory for log files (created if not exists)
@@ -34,9 +50,9 @@ class LoggerManager:
         os.makedirs(log_dir, exist_ok=True)
 
         # Common format for all loggers
-        log_format = logging.Formatter(
+        log_format = TimezoneFormatter(
             "[%(asctime)s] %(levelname)s - %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S"
+            datefmt="%Y-%m-%d %H:%M:%S",
         )
 
         # Rotation settings: 1MB max, 5 backups
@@ -51,7 +67,7 @@ class LoggerManager:
         app_file_handler = RotatingFileHandler(
             os.path.join(log_dir, "krawl.log"),
             maxBytes=max_bytes,
-            backupCount=backup_count
+            backupCount=backup_count,
         )
         app_file_handler.setFormatter(log_format)
         self._app_logger.addHandler(app_file_handler)
@@ -68,7 +84,7 @@ class LoggerManager:
         access_file_handler = RotatingFileHandler(
             os.path.join(log_dir, "access.log"),
             maxBytes=max_bytes,
-            backupCount=backup_count
+            backupCount=backup_count,
         )
         access_file_handler.setFormatter(log_format)
         self._access_logger.addHandler(access_file_handler)
@@ -83,12 +99,12 @@ class LoggerManager:
         self._credential_logger.handlers.clear()
 
         # Credential logger uses a simple format: timestamp|ip|username|password|path
-        credential_format = logging.Formatter("%(message)s")
-        
+        credential_format = TimezoneFormatter("%(message)s")
+
         credential_file_handler = RotatingFileHandler(
             os.path.join(log_dir, "credentials.log"),
             maxBytes=max_bytes,
-            backupCount=backup_count
+            backupCount=backup_count,
         )
         credential_file_handler.setFormatter(credential_format)
         self._credential_logger.addHandler(credential_file_handler)
