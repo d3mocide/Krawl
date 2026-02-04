@@ -22,8 +22,8 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ${{ vars.DOCKER_REGISTRY }}
-  IMAGE_NAME: ${{ vars.DOCKER_IMAGE_NAME }}
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build:
