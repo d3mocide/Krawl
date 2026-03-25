@@ -23,7 +23,23 @@ dashboard:
   # if set to "null" this will Auto-generates random path if not set
   # can be set to "/dashboard" or similar <-- note this MUST include a forward slash
   # secret_path: super-secret-dashboard-path
-  secret_path: test
+  secret_path: null
+
+  # Password for accessing protected dashboard panels.
+  # If null, a random password will be generated and printed in the logs.
+  # Can also be set via KRAWL_DASHBOARD_PASSWORD env var.
+  password: null
+
+backups:
+  path: "backups"
+  cron: "*/30 * * * *"
+  enabled: false
+
+exports:
+  path: "exports"
+
+logging:
+  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 database:
   path: "data/krawl.db"
